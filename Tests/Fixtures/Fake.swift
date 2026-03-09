@@ -78,12 +78,15 @@ enum Fake {
         imageURL: String? = nil,
         isDraft: Bool = false,
         createdAt: Date = Date(),
-        kudosCount: Int = 0,
+        reactions: [Reaction]? = nil,
         comments: [Comment]? = nil,
         author: User? = nil,
-        hasGivenKudos: Bool = false
+        paymentRequest: PaymentRequest? = nil,
+        requestedUserIDs: [UUID]? = nil,
+        completionPostID: UUID? = nil,
+        choreSubcategory: ChoreSubcategory? = nil
     ) -> Post {
-        var p = Post(
+        Post(
             id: id,
             homeID: homeID,
             userID: userID,
@@ -92,22 +95,43 @@ enum Fake {
             imageURL: imageURL,
             isDraft: isDraft,
             createdAt: createdAt,
-            kudosCount: kudosCount,
+            reactions: reactions,
             comments: comments,
-            author: author
+            author: author,
+            paymentRequest: paymentRequest,
+            requestedUserIDs: requestedUserIDs,
+            completionPostID: completionPostID,
+            choreSubcategory: choreSubcategory
         )
-        p.hasGivenKudos = hasGivenKudos
-        return p
+    }
+
+    static func reaction(
+        id: UUID = UUID(),
+        postID: UUID = UUID(),
+        userID: UUID = UUID(),
+        emoji: String = "👍",
+        createdAt: Date = Date(),
+        user: User? = nil
+    ) -> Reaction {
+        Reaction(
+            id: id,
+            postID: postID,
+            userID: userID,
+            emoji: emoji,
+            createdAt: createdAt,
+            user: user
+        )
     }
 
     /// A published chore post with a specific author
-    static func chorePost(author: User? = nil) -> Post {
+    static func chorePost(author: User? = nil, reactions: [Reaction]? = nil) -> Post {
         let authorUser = author ?? user()
         return post(
             userID: authorUser.id,
             category: .chore,
             text: "Cleaned the bathroom 🧹",
             isDraft: false,
+            reactions: reactions,
             author: authorUser
         )
     }
@@ -144,6 +168,54 @@ enum Fake {
             text: text,
             isDraft: false,
             author: authorUser
+        )
+    }
+
+    /// A published request post. When requestedUserIDs is nil, the request is open to everyone.
+    static func requestPost(
+        homeID: UUID = UUID(),
+        userID: UUID = UUID(),
+        text: String = "Can someone do the dishes? 🙋",
+        requestedUserIDs: [UUID]? = nil,
+        author: User? = nil
+    ) -> Post {
+        let authorUser = author ?? user(id: userID)
+        return post(
+            homeID: homeID,
+            userID: authorUser.id,
+            category: .request,
+            text: text,
+            isDraft: false,
+            author: authorUser,
+            requestedUserIDs: requestedUserIDs
+        )
+    }
+
+    /// A request post that has already been completed by a second user's reply post.
+    static func completedRequest(
+        homeID: UUID = UUID(),
+        requestorID: UUID = UUID(),
+        completerID: UUID = UUID()
+    ) -> Post {
+        let completer = user(id: completerID, name: "Completer")
+        let completionID = UUID()
+        let completionReply = post(
+            id: completionID,
+            homeID: homeID,
+            userID: completerID,
+            category: .chore,
+            text: "Done! 💪",
+            isDraft: false,
+            author: completer
+        )
+        return post(
+            homeID: homeID,
+            userID: requestorID,
+            category: .request,
+            text: "Can someone do the dishes? 🙋",
+            isDraft: false,
+            requestedUserIDs: nil,
+            completionPostID: completionID
         )
     }
 
@@ -308,6 +380,61 @@ enum Fake {
         )
     }
 
+    // MARK: - HouseholdReminders
+
+    static func reminder(
+        id: UUID = UUID(),
+        homeID: UUID = UUID(),
+        name: String = "Toilet Paper",
+        emoji: String = "🧻",
+        intervalDays: Int = 14,
+        lastClearedAt: Date? = nil,
+        lastClearedByUserID: UUID? = nil,
+        lastClearedByUser: User? = nil,
+        createdAt: Date = Date(),
+        createdByUserID: UUID = UUID()
+    ) -> HouseholdReminder {
+        HouseholdReminder(
+            id: id,
+            homeID: homeID,
+            name: name,
+            emoji: emoji,
+            intervalDays: intervalDays,
+            lastClearedAt: lastClearedAt,
+            lastClearedByUserID: lastClearedByUserID,
+            lastClearedByUser: lastClearedByUser,
+            createdAt: createdAt,
+            createdByUserID: createdByUserID
+        )
+    }
+
+    /// A reminder that is due (never cleared)
+    static func dueReminderNeverCleared(homeID: UUID = UUID()) -> HouseholdReminder {
+        reminder(homeID: homeID, name: "Dish Soap", emoji: "🍶", lastClearedAt: nil)
+    }
+
+    /// A reminder that is overdue (cleared 20 days ago, interval is 14 days)
+    static func overdueReminder(homeID: UUID = UUID()) -> HouseholdReminder {
+        reminder(
+            homeID: homeID,
+            name: "Paper Towels",
+            emoji: "🧻",
+            intervalDays: 14,
+            lastClearedAt: Date().addingTimeInterval(-20 * 86400)
+        )
+    }
+
+    /// A reminder that is not yet due (cleared 3 days ago, interval is 14 days)
+    static func upcomingReminder(homeID: UUID = UUID()) -> HouseholdReminder {
+        reminder(
+            homeID: homeID,
+            name: "Sponges",
+            emoji: "🧽",
+            intervalDays: 14,
+            lastClearedAt: Date().addingTimeInterval(-3 * 86400)
+        )
+    }
+
     // MARK: - Full Scenarios
 
     /// Returns a realistic 3-user home with different posting histories so
@@ -350,35 +477,35 @@ enum Fake {
             text: "Vacuumed the living room 🧹",
             isDraft: false,
             createdAt: now.addingTimeInterval(-1 * 3600),  // 1h ago
-            kudosCount: 3, author: alex
+            author: alex
         )
         let post2 = post(
             homeID: homeID, userID: jordan.id, category: .purchase,
             text: "Bought paper towels $8.50 🛒",
             isDraft: false,
             createdAt: now.addingTimeInterval(-6 * 3600),  // 6h ago
-            kudosCount: 1, author: jordan
+            author: jordan
         )
         let post3 = post(
             homeID: homeID, userID: sam.id, category: .general,
             text: "Plumber coming tomorrow 📣",
             isDraft: false,
             createdAt: now.addingTimeInterval(-5 * 24 * 3600),  // 5 days ago
-            kudosCount: 0, author: sam
+            author: sam
         )
         let post4 = post(
             homeID: homeID, userID: alex.id, category: .purchase,
             text: "Restocked cleaning supplies $32 🛒",
             isDraft: false,
             createdAt: now.addingTimeInterval(-2 * 24 * 3600),  // 2 days ago
-            kudosCount: 2, author: alex
+            author: alex
         )
         let post5 = post(
             homeID: homeID, userID: jordan.id, category: .chore,
             text: "Took out the trash 🧹",
             isDraft: false,
             createdAt: now.addingTimeInterval(-48 * 3600),  // exactly 48h ago
-            kudosCount: 4, author: jordan
+            author: jordan
         )
 
         // Draft — should NOT appear in published feed

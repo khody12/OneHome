@@ -81,14 +81,15 @@ struct CameraPostFlowTests {
 
     // MARK: - All three categories are selectable
 
-    @Test("All three categories are selectable")
+    @Test("All four categories are selectable")
     func allCategoriesAreAvailable() {
-        // PostCategory.allCases must contain exactly the three expected cases
+        // PostCategory.allCases must contain exactly the four expected cases
         let cases = PostCategory.allCases
-        #expect(cases.count == 3)
+        #expect(cases.count == 4)
         #expect(cases.contains(.chore))
         #expect(cases.contains(.purchase))
         #expect(cases.contains(.general))
+        #expect(cases.contains(.request))
     }
 
     // MARK: - Reset clears state

@@ -16,15 +16,6 @@ final class MockPostService: PostServiceProtocol {
     /// homeID passed on the most recent fetchFeed call
     var lastFetchedHomeID: UUID?
 
-    /// Number of times toggleKudos was called
-    var toggleKudosCallCount = 0
-    /// postID passed on the most recent toggleKudos call
-    var lastToggledPostID: UUID?
-    /// userID passed on the most recent toggleKudos call
-    var lastToggledUserID: UUID?
-    /// hasKudos flag passed on the most recent toggleKudos call
-    var lastToggledHasKudos: Bool?
-
     /// Number of times addComment was called
     var addCommentCallCount = 0
     /// Arguments from the most recent addComment call
@@ -72,14 +63,6 @@ final class MockPostService: PostServiceProtocol {
         return feedToReturn
     }
 
-    func toggleKudos(postID: UUID, userID: UUID, hasKudos: Bool) async throws {
-        toggleKudosCallCount += 1
-        lastToggledPostID = postID
-        lastToggledUserID = userID
-        lastToggledHasKudos = hasKudos
-        if let error = errorToThrow { throw error }
-    }
-
     func addComment(postID: UUID, userID: UUID, text: String) async throws -> Comment {
         addCommentCallCount += 1
         lastCommentPostID = postID
@@ -116,10 +99,6 @@ final class MockPostService: PostServiceProtocol {
     func reset() {
         fetchFeedCallCount = 0
         lastFetchedHomeID = nil
-        toggleKudosCallCount = 0
-        lastToggledPostID = nil
-        lastToggledUserID = nil
-        lastToggledHasKudos = nil
         addCommentCallCount = 0
         lastCommentPostID = nil
         lastCommentUserID = nil

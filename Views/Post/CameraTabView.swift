@@ -6,8 +6,8 @@ import SwiftUI
 /// Associated values carry data forward through the funnel.
 enum CameraStep {
     case camera
-    case categorize(capturedImage: UIImage?)
-    case review(capturedImage: UIImage?, category: PostCategory, text: String)
+    case categorize(capturedImage: UIImage?, members: [User])
+    case review(capturedImage: UIImage?, category: PostCategory, text: String, wantsPayment: Bool, requestedUserIDs: [UUID], choreSubcategory: ChoreSubcategory?, reminderID: UUID?)
 }
 
 // MARK: - CameraTabView
@@ -20,6 +20,7 @@ struct CameraTabView: View {
 
     @State private var step: CameraStep = .camera
     @State private var vm = PostViewModel()
+    @State private var dueReminders: [HouseholdReminder] = []
     @Environment(AppState.self) var appState
 
     var body: some View {
@@ -30,13 +31,13 @@ struct CameraTabView: View {
                     onCapture: { image in
                         // Photo captured — move to categorize, draft already started in VM
                         withAnimation(.easeInOut(duration: 0.35)) {
-                            step = .categorize(capturedImage: image)
+                            step = .categorize(capturedImage: image, members: home.members ?? [])
                         }
                     },
                     onSkip: {
                         // No photo — move to categorize with nil image
                         withAnimation(.easeInOut(duration: 0.35)) {
-                            step = .categorize(capturedImage: nil)
+                            step = .categorize(capturedImage: nil, members: home.members ?? [])
                         }
                     },
                     vm: vm,
@@ -44,12 +45,14 @@ struct CameraTabView: View {
                 )
                 .transition(.opacity)
 
-            case .categorize(let capturedImage):
+            case .categorize(let capturedImage, let members):
                 CategorizeView(
                     capturedImage: capturedImage,
-                    onNext: { category, text in
+                    members: members,
+                    dueReminders: dueReminders,
+                    onNext: { category, text, wantsPayment, requestedUserIDs, choreSubcategory, reminderID in
                         withAnimation(.easeInOut(duration: 0.35)) {
-                            step = .review(capturedImage: capturedImage, category: category, text: text)
+                            step = .review(capturedImage: capturedImage, category: category, text: text, wantsPayment: wantsPayment, requestedUserIDs: requestedUserIDs, choreSubcategory: choreSubcategory, reminderID: reminderID)
                         }
                     },
                     onBack: {
@@ -63,16 +66,20 @@ struct CameraTabView: View {
                     removal: .move(edge: .leading)
                 ))
 
-            case .review(let capturedImage, let category, let text):
+            case .review(let capturedImage, let category, let text, let wantsPayment, let requestedUserIDs, let choreSubcategory, let reminderID):
                 ReviewPostView(
                     capturedImage: capturedImage,
                     category: category,
                     captionText: text,
+                    wantsPaymentRequest: wantsPayment,
+                    requestedUserIDs: requestedUserIDs,
+                    choreSubcategory: choreSubcategory,
+                    reminderID: reminderID,
                     vm: vm,
                     home: home,
                     onBack: {
                         withAnimation(.easeInOut(duration: 0.35)) {
-                            step = .categorize(capturedImage: capturedImage)
+                            step = .categorize(capturedImage: capturedImage, members: home.members ?? [])
                         }
                     },
                     onSuccess: {
@@ -90,6 +97,18 @@ struct CameraTabView: View {
             }
         }
         .animation(.easeInOut(duration: 0.35), value: stepIndex)
+        .task { await loadDueReminders() }
+    }
+
+    private func loadDueReminders() async {
+#if DEBUG
+        if home.id == DevPreview.home.id {
+            dueReminders = DevPreview.reminders.filter { $0.isDue }
+            return
+        }
+#endif
+        let all = try? await HouseholdReminderService.shared.fetchReminders(for: home.id)
+        dueReminders = (all ?? []).filter { $0.isDue }
     }
 
     /// A numeric representation of the current step used to drive animation.

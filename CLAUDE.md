@@ -39,3 +39,18 @@ Minimal login: username/email + password via Supabase Auth.
 - **Slacker roast** — if all other roommates have posted in the last 72 hours and you haven't, the app auto-posts/notifies calling you out
 - **Contacts integration** — see which contacts are on OneHome, quickly invite them to your Home
 - **Payment integration** — Venmo/PayPal deep link or split request for shared purchases (if APIs allow)
+
+## Xcode Project Registration
+
+**Every new `.swift` file MUST be added to `OneHome.xcodeproj/project.pbxproj` or Xcode will not compile it.** Placing a file on disk is not enough — Xcode only builds files explicitly registered in the project manifest.
+
+When you create a new `.swift` file, you must add three entries to `project.pbxproj`:
+
+1. **PBXFileReference** — declares the file exists (in the `Begin PBXFileReference section`)
+2. **PBXBuildFile** — adds it to a build phase (in the `Begin PBXBuildFile section`)
+3. **PBXGroup children** — places it in the correct folder group so it appears in Xcode's navigator
+4. **PBXSourcesBuildPhase files** — adds it to the correct target's compile sources (main app target or test target)
+
+Use unique 24-character hex IDs for each entry. Main app sources go in the first `PBXSourcesBuildPhase` block; test sources go in the second.
+
+If you forget this and see `Cannot find type 'X' in scope` for a type that clearly exists as a file, a missing `.pbxproj` registration is the cause.

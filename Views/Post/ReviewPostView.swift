@@ -9,6 +9,9 @@ struct ReviewPostView: View {
     let category: PostCategory
     let captionText: String
     var wantsPaymentRequest: Bool = false
+    var requestedUserIDs: [UUID] = []
+    var choreSubcategory: ChoreSubcategory? = nil
+    var reminderID: UUID? = nil
 
     // Shared VM that holds the draft created in step 1
     var vm: PostViewModel
@@ -34,13 +37,21 @@ struct ReviewPostView: View {
                     .padding(.top, 16)
 
                 // ── Category badge ────────────────────────────────────────
-                HStack {
+                HStack(spacing: 8) {
                     Text("\(category.emoji) \(category.label)")
                         .font(.subheadline.bold())
                         .padding(.horizontal, 14)
                         .padding(.vertical, 6)
                         .background(Color.orange.opacity(0.15), in: Capsule())
                         .foregroundStyle(.orange)
+                    if let sub = choreSubcategory, sub != .other {
+                        Text("\(sub.emoji) \(sub.label)")
+                            .font(.subheadline.bold())
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(Color.blue.opacity(0.12), in: Capsule())
+                            .foregroundStyle(Color.blue)
+                    }
                     Spacer()
                 }
                 .padding(.horizontal, 20)
@@ -58,6 +69,26 @@ struct ReviewPostView: View {
                     Spacer()
                 }
                 .padding(.horizontal, 20)
+
+                // ── Assigned to (request posts only) ─────────────────────
+                if category == .request && !requestedUserIDs.isEmpty {
+                    let assignedNames = (home.members ?? [])
+                        .filter { requestedUserIDs.contains($0.id) }
+                        .map { $0.name }
+                        .joined(separator: ", ")
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Assigned to")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(assignedNames)
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.primary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 20)
+                }
 
                 // ── Success confirmation ───────────────────────────────────
                 if let msg = successMessage {
@@ -258,7 +289,28 @@ struct ReviewPostView: View {
             vm.text = captionText
             // capturedImage is already set on the VM from CameraView
 
+            // For request posts, stamp the requested user IDs onto the draft
+            if category == .request, !requestedUserIDs.isEmpty {
+                vm.draft?.requestedUserIDs = requestedUserIDs
+            }
+
+            // For chore posts, stamp the subcategory onto the draft
+            if category == .chore {
+                vm.draft?.choreSubcategory = choreSubcategory ?? .other
+            }
+
             await vm.submitPost(homeID: home.id, userID: userID, isDraft: isDraft)
+
+            // If a reminder was linked to this purchase post, clear it
+            if vm.errorMessage == nil, !isDraft, let rid = reminderID {
+#if DEBUG
+                if home.id != DevPreview.home.id {
+                    try? await HouseholdReminderService.shared.clearReminder(id: rid, byUserID: userID)
+                }
+#else
+                try? await HouseholdReminderService.shared.clearReminder(id: rid, byUserID: userID)
+#endif
+            }
 
             if vm.errorMessage == nil {
                 // Show a fun category-appropriate confirmation
@@ -282,6 +334,7 @@ struct ReviewPostView: View {
         case .chore:    return "Chore logged! Nice work 💪"
         case .purchase: return "Receipts filed! 🧾"
         case .general:  return "Shared with the home! 📣"
+        case .request:  return "Request posted! Waiting on the crew 🙋"
         }
     }
 }

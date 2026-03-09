@@ -5,7 +5,7 @@ struct PostDetailView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var viewModel: PostDetailViewModel
-    @State private var showKudosList = false
+    @State private var showEmojiPicker = false
     @FocusState private var composerFocused: Bool
 
     init(post: Post) {
@@ -24,12 +24,19 @@ struct PostDetailView: View {
                         Divider()
                             .padding(.vertical, 12)
 
-                        kudosSection
+                        reactionBar
                             .padding(.horizontal)
 
-                        giveKudosButton
+                        reactButton
                             .padding(.horizontal)
                             .padding(.top, 12)
+
+                        if viewModel.post.isSystemPost {
+                            Divider()
+                                .padding(.vertical, 12)
+                            reminderSection
+                                .padding(.horizontal)
+                        }
 
                         Divider()
                             .padding(.vertical, 16)
@@ -60,14 +67,15 @@ struct PostDetailView: View {
             .safeAreaInset(edge: .bottom) {
                 commentComposer
             }
-            .sheet(isPresented: $showKudosList) {
-                KudosListView(kudosUsers: viewModel.kudosUsers)
-                    .presentationDetents([.medium, .large])
+            // Emoji picker sheet
+            .sheet(isPresented: $showEmojiPicker) {
+                emojiPickerSheet
+                    .presentationDetents([.height(100)])
             }
             .task {
-                if let userID = appState.currentUser?.id {
-                    await viewModel.loadDetails(userID: userID)
-                }
+                let userID = appState.currentUser?.id ?? UUID()
+                async let _ = viewModel.loadDetails(userID: userID)
+                async let _ = viewModel.loadReactions(postID: viewModel.post.id)
             }
             .alert("Error", isPresented: .constant(viewModel.errorMessage != nil), actions: {
                 Button("OK") { viewModel.errorMessage = nil }
@@ -83,15 +91,22 @@ struct PostDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             // Author header
             HStack {
-                let username = viewModel.post.author?.username ?? "user"
-                Circle()
-                    .fill(avatarColor(for: username))
-                    .frame(width: 42, height: 42)
-                    .overlay(
-                        Text(viewModel.post.author?.name.prefix(1) ?? "?")
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                    )
+                if viewModel.post.isSystemPost {
+                    Circle()
+                        .fill(Color.orange.opacity(0.15))
+                        .frame(width: 42, height: 42)
+                        .overlay(Text("🏠").font(.system(size: 22)))
+                } else {
+                    let username = viewModel.post.author?.username ?? "user"
+                    Circle()
+                        .fill(avatarColor(for: username))
+                        .frame(width: 42, height: 42)
+                        .overlay(
+                            Text(viewModel.post.author?.name.prefix(1) ?? "?")
+                                .font(.headline)
+                                .foregroundStyle(.white)
+                        )
+                }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(viewModel.post.author?.name ?? "Unknown")
@@ -102,14 +117,23 @@ struct PostDetailView: View {
                 }
                 Spacer()
 
-                // Category badge
-                Text("\(viewModel.post.category.emoji) \(viewModel.post.category.label)")
-                    .font(.caption.bold())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(categoryColor(viewModel.post.category).opacity(0.15))
-                    .foregroundStyle(categoryColor(viewModel.post.category))
-                    .clipShape(Capsule())
+                if viewModel.post.isSystemPost {
+                    Text("📢 Reminder")
+                        .font(.caption.bold())
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.orange.opacity(0.15))
+                        .foregroundStyle(Color.orange)
+                        .clipShape(Capsule())
+                } else {
+                    Text("\(viewModel.post.category.emoji) \(viewModel.post.category.label)")
+                        .font(.caption.bold())
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(categoryColor(viewModel.post.category).opacity(0.15))
+                        .foregroundStyle(categoryColor(viewModel.post.category))
+                        .clipShape(Capsule())
+                }
             }
 
             // Full-width image
@@ -136,94 +160,189 @@ struct PostDetailView: View {
         }
     }
 
-    // MARK: - Kudos Section
+    // MARK: - Reaction Bar
 
-    private var kudosSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if viewModel.post.kudosCount > 0 {
-                Button {
-                    showKudosList = true
-                } label: {
-                    HStack(spacing: -8) {
-                        // Up to 5 avatar circles
-                        ForEach(viewModel.kudosUsers.prefix(5)) { user in
-                            Circle()
-                                .fill(avatarColor(for: user.username))
-                                .frame(width: 28, height: 28)
-                                .overlay(
-                                    Text(user.name.prefix(1))
-                                        .font(.caption2.bold())
-                                        .foregroundStyle(.white)
-                                )
-                                .overlay(
-                                    Circle().stroke(Color(.systemBackground), lineWidth: 2)
-                                )
+    private var reactionBar: some View {
+        let userID = appState.currentUser?.id ?? UUID()
+        let summary = viewModel.reactionSummary(userID: userID)
+        return VStack(alignment: .leading, spacing: 8) {
+            if summary.isEmpty {
+                Text("No reactions yet")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(summary, id: \.emoji) { item in
+                            Button {
+                                Task {
+                                    await viewModel.toggleReaction(emoji: item.emoji, userID: userID)
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text(item.emoji)
+                                    Text("\(item.count)")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(item.hasReacted ? Color.white : Color.primary)
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(item.hasReacted ? Color(red: 0.2, green: 0.5, blue: 1.0) : Color(.tertiarySystemFill))
+                                .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
                         }
-
-                        if viewModel.kudosUsers.count > 5 {
-                            Circle()
-                                .fill(Color.secondary.opacity(0.2))
-                                .frame(width: 28, height: 28)
-                                .overlay(
-                                    Text("+\(viewModel.kudosUsers.count - 5)")
-                                        .font(.caption2.bold())
-                                        .foregroundStyle(.secondary)
-                                )
-                                .overlay(
-                                    Circle().stroke(Color(.systemBackground), lineWidth: 2)
-                                )
-                        }
-
-                        Text(kudosSummaryText)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.leading, 14)
                     }
                 }
-                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: - React Button
+
+    private var reactButton: some View {
+        Button {
+            showEmojiPicker = true
+        } label: {
+            HStack {
+                Spacer()
+                Text("React 😄")
+                    .font(.headline)
+                    .foregroundStyle(Color.white)
+                Spacer()
+            }
+            .padding(.vertical, 14)
+            .background(Color.orange.opacity(0.85))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Emoji Picker Sheet
+
+    private var emojiPickerSheet: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                ForEach(presetReactions, id: \.self) { emoji in
+                    Button {
+                        let userID = appState.currentUser?.id ?? UUID()
+                        Task {
+                            await viewModel.toggleReaction(emoji: emoji, userID: userID)
+                        }
+                        showEmojiPicker = false
+                    } label: {
+                        Text(emoji)
+                            .font(.system(size: 32))
+                            .padding(8)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+        }
+    }
+
+    // MARK: - Reminder Section (grab history + member rotation)
+
+    private var reminderSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            let grabs = viewModel.reminderGrabs.isEmpty
+                ? (viewModel.post.reminder?.grabs ?? [])
+                : viewModel.reminderGrabs
+            let members = viewModel.post.homeMembers ?? []
+            let claimerID = viewModel.post.reminder?.currentClaimerID
+
+            // Member rotation — who is most overdue
+            if !members.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Who's Up")
+                        .font(.headline)
+                    VStack(spacing: 6) {
+                        ForEach(membersSortedByLastGrab(members: members, grabs: grabs)) { member in
+                            HStack(spacing: 10) {
+                                Circle()
+                                    .fill(avatarColorForMember(member.username))
+                                    .frame(width: 34, height: 34)
+                                    .overlay(
+                                        Text(member.name.prefix(1))
+                                            .font(.system(size: 14, weight: .bold))
+                                            .foregroundStyle(.white)
+                                    )
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(member.name)
+                                        .font(.subheadline.bold())
+                                    if let lastGrab = grabs.filter({ $0.userID == member.id }).map({ $0.grabbedAt }).max() {
+                                        Text("Last grabbed \(lastGrab.formatted(.relative(presentation: .named)))")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    } else {
+                                        Text("Never grabbed it")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer()
+                                if member.id == claimerID {
+                                    Text("Grabbing it ✅")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(Color.green)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Grab history
+            if !grabs.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Grab History")
+                        .font(.headline)
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(grabs) { grab in
+                            HStack(spacing: 10) {
+                                Circle()
+                                    .fill(avatarColorForMember(grab.user?.username ?? ""))
+                                    .frame(width: 26, height: 26)
+                                    .overlay(
+                                        Text(grab.user?.name.prefix(1) ?? "?")
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundStyle(.white)
+                                    )
+                                Text(grab.user?.name ?? "Someone")
+                                    .font(.subheadline)
+                                Spacer()
+                                Text(grab.grabbedAt.formatted(.relative(presentation: .named)))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
             } else {
-                Text("No kudos yet")
-                    .font(.caption)
+                Text("No one has grabbed this yet — be the first!")
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
         }
     }
 
-    private var kudosSummaryText: String {
-        let count = viewModel.post.kudosCount
-        if count == 1 {
-            return "\(count) kudos"
+    private func membersSortedByLastGrab(members: [User], grabs: [ReminderGrab]) -> [User] {
+        members.sorted { a, b in
+            let aLast = grabs.filter { $0.userID == a.id }.map { $0.grabbedAt }.max()
+            let bLast = grabs.filter { $0.userID == b.id }.map { $0.grabbedAt }.max()
+            switch (aLast, bLast) {
+            case (nil, nil): return a.name < b.name
+            case (nil, _): return true
+            case (_, nil): return false
+            case (let aDate, let bDate): return aDate! < bDate!
+            }
         }
-        return "\(count) kudos"
     }
 
-    // MARK: - Give Kudos Button
-
-    private var giveKudosButton: some View {
-        Button {
-            Task {
-                if let userID = appState.currentUser?.id {
-                    await viewModel.toggleKudos(userID: userID)
-                }
-            }
-        } label: {
-            HStack {
-                Spacer()
-                Text(viewModel.post.hasGivenKudos ? "🙌 You kudos'd this" : "👏 Give Kudos")
-                    .font(.headline)
-                    .foregroundStyle(viewModel.post.hasGivenKudos ? .white : .white)
-                Spacer()
-            }
-            .padding(.vertical, 14)
-            .background(viewModel.post.hasGivenKudos ? Color.orange : Color.orange.opacity(0.85))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-        }
-        .buttonStyle(.plain)
-        .scaleEffect(viewModel.kudosBounce ? 1.08 : 1.0)
-        .animation(
-            .spring(response: 0.25, dampingFraction: 0.5),
-            value: viewModel.kudosBounce
-        )
+    private func avatarColorForMember(_ username: String) -> Color {
+        Color(hue: Double(username.hashValue & 0xFF) / 255, saturation: 0.6, brightness: 0.75)
     }
 
     // MARK: - Comments Section
@@ -315,6 +434,7 @@ struct PostDetailView: View {
         case .chore: return Color.blue
         case .purchase: return Color.green
         case .general: return Color.orange
+        case .request: return Color.purple
         }
     }
 }

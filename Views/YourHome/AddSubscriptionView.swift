@@ -1,36 +1,5 @@
 import SwiftUI
 
-// MARK: - Popular Services Data
-
-struct PopularService: Identifiable {
-    let id = UUID()
-    let name: String
-    let icon: String
-}
-
-let popularServices: [PopularService] = [
-    PopularService(name: "Netflix", icon: "📺"),
-    PopularService(name: "Spotify", icon: "🎵"),
-    PopularService(name: "HBO Max", icon: "🎬"),
-    PopularService(name: "Disney+", icon: "🏰"),
-    PopularService(name: "Hulu", icon: "📡"),
-    PopularService(name: "Apple TV+", icon: "🍎"),
-    PopularService(name: "Amazon Prime", icon: "📦"),
-    PopularService(name: "YouTube Premium", icon: "▶️"),
-    PopularService(name: "Apple Music", icon: "🎶"),
-    PopularService(name: "Peacock", icon: "🦚"),
-    PopularService(name: "Paramount+", icon: "⭐"),
-    PopularService(name: "ESPN+", icon: "🏈"),
-    PopularService(name: "Xbox Game Pass", icon: "🎮"),
-    PopularService(name: "PlayStation Plus", icon: "🎮"),
-    PopularService(name: "Nintendo Switch Online", icon: "🎮"),
-    PopularService(name: "iCloud+", icon: "☁️"),
-    PopularService(name: "Google One", icon: "☁️"),
-    PopularService(name: "Dropbox", icon: "📁"),
-    PopularService(name: "ChatGPT Plus", icon: "🤖"),
-    PopularService(name: "Adobe Creative Cloud", icon: "🎨"),
-]
-
 // MARK: - AddSubscriptionView
 
 struct AddSubscriptionView: View {

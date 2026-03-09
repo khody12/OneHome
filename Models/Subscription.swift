@@ -1,7 +1,7 @@
 import Foundation
 
-// A recurring shared expense for a home (Netflix, Spotify, etc.)
-// Only applies to a subset of roommates, not necessarily all.
+/// A recurring shared expense for a home (Netflix, Spotify, etc.)
+/// Applies to a configurable subset of roommates.
 struct Subscription: Codable, Identifiable {
     let id: UUID
     let homeID: UUID
@@ -44,3 +44,34 @@ struct SubscriptionMember: Codable, Identifiable {
         case user
     }
 }
+
+/// Pre-loaded list of popular subscription services
+struct PopularService: Identifiable {
+    let id = UUID()
+    let name: String
+    let icon: String
+}
+
+let popularServices: [PopularService] = [
+    PopularService(name: "Custom", icon: "✏️"),
+    PopularService(name: "Netflix", icon: "📺"),
+    PopularService(name: "Spotify", icon: "🎵"),
+    PopularService(name: "HBO Max", icon: "🎬"),
+    PopularService(name: "Disney+", icon: "🏰"),
+    PopularService(name: "Hulu", icon: "📡"),
+    PopularService(name: "Apple TV+", icon: "🍎"),
+    PopularService(name: "Amazon Prime", icon: "📦"),
+    PopularService(name: "YouTube Premium", icon: "▶️"),
+    PopularService(name: "Apple Music", icon: "🎶"),
+    PopularService(name: "Peacock", icon: "🦚"),
+    PopularService(name: "Paramount+", icon: "⭐"),
+    PopularService(name: "ESPN+", icon: "🏈"),
+    PopularService(name: "Xbox Game Pass", icon: "🎮"),
+    PopularService(name: "PlayStation Plus", icon: "🕹️"),
+    PopularService(name: "Nintendo Switch Online", icon: "👾"),
+    PopularService(name: "iCloud+", icon: "☁️"),
+    PopularService(name: "Google One", icon: "🔵"),
+    PopularService(name: "Dropbox", icon: "📁"),
+    PopularService(name: "ChatGPT Plus", icon: "🤖"),
+    PopularService(name: "Adobe Creative Cloud", icon: "🎨"),
+]

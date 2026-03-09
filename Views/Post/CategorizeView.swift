@@ -7,13 +7,18 @@ import SwiftUI
 /// text forward to ReviewPostView.
 struct CategorizeView: View {
     let capturedImage: UIImage?
-    var onNext: (PostCategory, String, Bool) -> Void
+    let members: [User]
+    var dueReminders: [HouseholdReminder] = []
+    var onNext: (PostCategory, String, Bool, [UUID], ChoreSubcategory?, UUID?) -> Void
     var onBack: () -> Void
 
     @State private var selectedCategory: PostCategory? = nil
     @State private var captionText: String = ""
     @State private var addPaymentRequest: Bool = false
     @State private var paymentAmount: Double = 0
+    @State private var requestedUserIDs: [UUID] = []
+    @State private var selectedChoreSubcategory: ChoreSubcategory? = nil
+    @State private var selectedReminderID: UUID? = nil
     @FocusState private var captionFocused: Bool
 
     var body: some View {
@@ -40,6 +45,56 @@ struct CategorizeView: View {
                     }
                 }
 
+                // ── Chore subcategory picker (chore posts only) ───────────
+                if selectedCategory == .chore {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("What kind of chore?")
+                            .font(.headline)
+                            .padding(.horizontal, 20)
+
+                        Text("Optional — helps track who does what")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 20)
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 10) {
+                                ForEach(ChoreSubcategory.allCases) { sub in
+                                    let isSelected = selectedChoreSubcategory == sub
+                                    Button {
+                                        if isSelected {
+                                            selectedChoreSubcategory = nil
+                                        } else {
+                                            selectedChoreSubcategory = sub
+                                        }
+                                    } label: {
+                                        HStack(spacing: 5) {
+                                            Text(sub.emoji)
+                                            Text(sub.label)
+                                                .font(.subheadline.bold())
+                                        }
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 8)
+                                        .background(
+                                            isSelected ? Color.orange : Color(.secondarySystemBackground),
+                                            in: Capsule()
+                                        )
+                                        .foregroundStyle(isSelected ? .white : .primary)
+                                        .overlay(
+                                            Capsule()
+                                                .stroke(isSelected ? Color.orange : Color.clear, lineWidth: 1.5)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                        }
+                    }
+                    .animation(.easeInOut(duration: 0.2), value: selectedChoreSubcategory)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
                 // ── Caption text field ────────────────────────────────────
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Caption")
@@ -52,6 +107,103 @@ struct CategorizeView: View {
                         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
                         .padding(.horizontal, 20)
                         .focused($captionFocused)
+                }
+
+                // ── Who is this for? (request posts only) ─────────────────
+                if selectedCategory == .request {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Who is this for?")
+                            .font(.headline)
+                            .padding(.horizontal, 20)
+
+                        Text("Leave everyone unselected to assign to the whole home.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 20)
+
+                        ForEach(members) { member in
+                            let isSelected = requestedUserIDs.contains(member.id)
+                            Button {
+                                if isSelected {
+                                    requestedUserIDs.removeAll { $0 == member.id }
+                                } else {
+                                    requestedUserIDs.append(member.id)
+                                }
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Circle()
+                                        .fill(Color.orange.opacity(0.2))
+                                        .frame(width: 32, height: 32)
+                                        .overlay(
+                                            Text(member.name.prefix(1))
+                                                .font(.subheadline.bold())
+                                        )
+                                    Text(member.name)
+                                        .font(.body)
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                    if isSelected {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(Color.orange)
+                                    } else {
+                                        Image(systemName: "circle")
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 8)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .animation(.easeInOut(duration: 0.2), value: requestedUserIDs)
+                }
+
+                // ── Clear a reminder? (purchase posts only) ───────────────
+                if selectedCategory == .purchase && !dueReminders.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Clear a reminder?")
+                            .font(.headline)
+                            .padding(.horizontal, 20)
+
+                        Text("Link this purchase to a reminder to reset its timer.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 20)
+
+                        ForEach(dueReminders) { reminder in
+                            let isSelected = selectedReminderID == reminder.id
+                            Button {
+                                selectedReminderID = isSelected ? nil : reminder.id
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Text(reminder.emoji)
+                                        .font(.title3)
+                                        .frame(width: 32)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(reminder.name)
+                                            .font(.body.bold())
+                                            .foregroundStyle(.primary)
+                                        Text(reminder.statusLabel)
+                                            .font(.caption)
+                                            .foregroundStyle(.red)
+                                    }
+                                    Spacer()
+                                    if isSelected {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(Color.orange)
+                                    } else {
+                                        Image(systemName: "circle")
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 8)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .animation(.easeInOut(duration: 0.2), value: selectedReminderID)
                 }
 
                 // ── Payment request toggle (purchase posts only) ───────────
@@ -108,7 +260,8 @@ struct CategorizeView: View {
 
                     Button("Next →") {
                         guard let cat = selectedCategory else { return }
-                        onNext(cat, captionText, addPaymentRequest && paymentAmount > 0)
+                        let sub = (cat == .chore) ? (selectedChoreSubcategory ?? .other) : nil
+                        onNext(cat, captionText, addPaymentRequest && paymentAmount > 0, requestedUserIDs, sub, selectedReminderID)
                     }
                     .font(.body.bold())
                     .foregroundStyle(.white)
@@ -213,6 +366,7 @@ extension PostCategory {
         case .chore:    return "I did something useful"
         case .purchase: return "I spent money on us"
         case .general:  return "Just sharing something"
+        case .request:  return "Ask someone to do something"
         }
     }
 }

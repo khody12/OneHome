@@ -16,8 +16,6 @@ import Foundation
 protocol PostServiceProtocol {
     /// Fetch all published posts for a home, newest first
     func fetchFeed(for homeID: UUID) async throws -> [Post]
-    /// Toggle kudos on/off. hasKudos = current state BEFORE toggle
-    func toggleKudos(postID: UUID, userID: UUID, hasKudos: Bool) async throws
     /// Add a comment to a post, returns the saved comment with author populated
     func addComment(postID: UUID, userID: UUID, text: String) async throws -> Comment
     /// Create a draft post immediately (before user finishes editing)
@@ -59,6 +57,23 @@ protocol MetricsServiceProtocol {
     func fetchMetrics(for homeID: UUID) async throws -> [UserMetrics]
     /// Record a published post — updates chores_done, total_spent, or last_post_at
     func recordPost(userID: UUID, homeID: UUID, category: PostCategory, amount: Double) async throws
+    /// Chore subcategory leaderboard
+    func fetchChoreLeaderboard(homeID: UUID, subcategory: ChoreSubcategory, since: Date?) async throws -> [CategoryLeaderboardEntry]
+    /// Overall chore leaderboard (all subcategories)
+    func fetchOverallChoreLeaderboard(homeID: UUID, since: Date?) async throws -> [CategoryLeaderboardEntry]
+    /// Spend leaderboard
+    func fetchSpendLeaderboard(homeID: UUID, since: Date?) async throws -> [CategoryLeaderboardEntry]
+}
+
+// MARK: ReactionServiceProtocol
+
+protocol ReactionServiceProtocol {
+    /// Add an emoji reaction to a post, returns the saved reaction with user populated
+    func addReaction(postID: UUID, userID: UUID, emoji: String) async throws -> Reaction
+    /// Remove a reaction by its ID
+    func removeReaction(id: UUID) async throws
+    /// Fetch all reactions for a post
+    func fetchReactions(for postID: UUID) async throws -> [Reaction]
 }
 
 // MARK: AuthServiceProtocol
@@ -72,4 +87,17 @@ protocol AuthServiceProtocol {
     func signOut() async throws
     /// Return the currently authenticated user's profile, or nil
     func currentUser() async throws -> User?
+}
+
+// MARK: HouseholdReminderServiceProtocol
+
+protocol HouseholdReminderServiceProtocol {
+    /// Fetch all reminders for a home
+    func fetchReminders(for homeID: UUID) async throws -> [HouseholdReminder]
+    /// Create a new reminder
+    func createReminder(homeID: UUID, userID: UUID, name: String, emoji: String, intervalDays: Int) async throws -> HouseholdReminder
+    /// Clear a reminder (mark as just bought)
+    func clearReminder(id: UUID, byUserID: UUID) async throws
+    /// Delete a reminder
+    func deleteReminder(id: UUID) async throws
 }

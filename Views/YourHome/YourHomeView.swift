@@ -9,6 +9,8 @@ struct YourHomeView: View {
     @State private var showAddSubscription = false
     @State private var showSpendHistory = false
     @State private var selectedMember: User?
+    @State private var showAddReminder = false
+    @State private var reminderToClear: HouseholdReminder?
 
     var home: Home
 
@@ -18,6 +20,7 @@ struct YourHomeView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     homeHeaderSection
                     roommatesSection
+                    remindersSection
                     spendingOverviewSection
                     recentPurchasesSection
                     subscriptionsSection
@@ -45,6 +48,12 @@ struct YourHomeView: View {
         }
         .sheet(item: $selectedMember) { member in
             MemberDetailSheet(member: member, vm: vm)
+        }
+        .sheet(isPresented: $showAddReminder) {
+            AddReminderSheet(vm: vm, home: home, userID: appState.currentUser?.id ?? UUID())
+        }
+        .sheet(item: $reminderToClear) { reminder in
+            ClearReminderSheet(reminder: reminder, vm: vm, home: home, userID: appState.currentUser?.id ?? UUID())
         }
     }
 
@@ -93,6 +102,55 @@ struct YourHomeView: View {
                 }
                 .padding(.horizontal)
                 .padding(.bottom, 4)
+            }
+        }
+    }
+
+    // MARK: - Reminders Section
+
+    private var remindersSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                SectionHeader(title: "🔔 Reminders")
+                Spacer()
+                Button {
+                    showAddReminder = true
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.orange)
+                }
+                .padding(.trailing)
+            }
+
+            if vm.reminders.isEmpty {
+                Text("No reminders yet — add household items to track! 🧻")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(vm.reminders) { reminder in
+                        ReminderRowView(reminder: reminder)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                reminderToClear = reminder
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    Task { await vm.deleteReminder(id: reminder.id, home: home) }
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                        if reminder.id != vm.reminders.last?.id {
+                            Divider().padding(.leading, 52)
+                        }
+                    }
+                }
+                .background(Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal)
             }
         }
     }
@@ -350,6 +408,113 @@ struct SpendLogRow: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
+    }
+}
+
+// MARK: - ReminderRowView
+
+struct ReminderRowView: View {
+    let reminder: HouseholdReminder
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(reminder.emoji)
+                .font(.title2)
+                .frame(width: 40)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(reminder.name)
+                    .font(.subheadline.bold())
+                    .lineLimit(1)
+                Text(reminder.statusLabel)
+                    .font(.caption.bold())
+                    .foregroundStyle(reminder.isDue ? .red : .green)
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 2) {
+                if let buyer = reminder.lastClearedByUser {
+                    Text("Last: \(buyer.name)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Never bought")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Text("Every \(reminder.intervalDays)d")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 12)
+    }
+}
+
+// MARK: - ClearReminderSheet
+
+struct ClearReminderSheet: View {
+    let reminder: HouseholdReminder
+    let vm: YourHomeViewModel
+    let home: Home
+    let userID: UUID
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 28) {
+                Spacer()
+
+                Text(reminder.emoji)
+                    .font(.system(size: 64))
+
+                VStack(spacing: 8) {
+                    Text("Did you just buy")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                    Text(reminder.name)
+                        .font(.title.bold())
+                }
+
+                Text("Marking this as cleared will reset the reminder timer.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+
+                Spacer()
+
+                Button {
+                    Task {
+                        await vm.clearReminder(id: reminder.id, userID: userID, home: home)
+                        dismiss()
+                    }
+                } label: {
+                    Text("Yes, I bought it! ✅")
+                        .font(.body.bold())
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Color.orange, in: RoundedRectangle(cornerRadius: 14))
+                }
+                .padding(.horizontal, 20)
+
+                Button("Not yet") {
+                    dismiss()
+                }
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 12)
+            }
+            .navigationTitle("Clear Reminder")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
     }
 }
 

@@ -49,13 +49,17 @@ struct UserMetricsRowView: View {
                         }
                         HStack(spacing: 10) {
                             Label("\(metrics.choresDone)", systemImage: "checklist")
+                                .fixedSize()
                             Label("$\(String(format: "%.0f", metrics.totalSpent))", systemImage: "dollarsign.circle")
+                                .fixedSize()
                             if let last = metrics.lastPostAt {
                                 Label(compactTimeAgo(last), systemImage: "clock")
+                                    .fixedSize()
                             }
                         }
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                     }
 
                     Spacer()

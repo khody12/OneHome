@@ -1,7 +1,7 @@
 import Supabase
 import Foundation
 
-/// Handles post creation (with draft), publishing, kudos, and comments
+/// Handles post creation (with draft), publishing, reactions, and comments
 class PostService {
     static let shared = PostService()
     private init() {}
@@ -23,7 +23,7 @@ class PostService {
     func updateDraft(_ post: Post) async throws {
         try await supabase
             .from("posts")
-            .update(PostUpdate(text: post.text, imageURL: post.imageURL, category: post.category))
+            .update(PostUpdate(text: post.text, imageURL: post.imageURL, category: post.category, choreSubcategory: post.choreSubcategory))
             .eq("id", value: post.id)
             .execute()
     }
@@ -53,37 +53,6 @@ class PostService {
         return posts
     }
 
-    // Toggle kudos — insert or delete
-    func toggleKudos(postID: UUID, userID: UUID, hasKudos: Bool) async throws {
-        if hasKudos {
-            try await supabase
-                .from("kudos")
-                .delete()
-                .eq("post_id", value: postID)
-                .eq("user_id", value: userID)
-                .execute()
-        } else {
-            let kudos = KudosInsert(postID: postID, userID: userID)
-            try await supabase.from("kudos").insert(kudos).execute()
-        }
-    }
-
-    // MARK: - Kudos Users
-
-    /// Fetches the list of users who gave kudos on a post.
-    func fetchKudosUsers(for postID: UUID) async throws -> [User] {
-        struct KudosRow: Decodable {
-            let user: User
-        }
-        let rows: [KudosRow] = try await supabase
-            .from("kudos")
-            .select("user:users(*)")
-            .eq("post_id", value: postID)
-            .execute()
-            .value
-        return rows.map { $0.user }
-    }
-
     // MARK: - Comments
 
     /// Fetches the full comment list for a post, sorted oldest first.
@@ -109,6 +78,29 @@ class PostService {
         guard let comment = comments.first else { throw AppError.notFound }
         return comment
     }
+
+    // MARK: - Requests
+
+    /// Mark a post as the completion of a request post.
+    func completeRequest(requestPostID: UUID, completionPostID: UUID) async throws {
+        try await supabase
+            .from("posts")
+            .update(["completion_post_id": completionPostID.uuidString])
+            .eq("id", value: requestPostID)
+            .execute()
+    }
+
+    /// Fetch a post by ID (used to load the completion post).
+    func fetchPost(id: UUID) async throws -> Post {
+        let posts: [Post] = try await supabase
+            .from("posts")
+            .select("*, author:users(*), comments(*, author:users(*))")
+            .eq("id", value: id)
+            .execute()
+            .value
+        guard let post = posts.first else { throw AppError.notFound }
+        return post
+    }
 }
 
 private struct PostInsert: Encodable {
@@ -129,18 +121,11 @@ private struct PostUpdate: Encodable {
     let text: String
     let imageURL: String?
     let category: PostCategory
+    let choreSubcategory: ChoreSubcategory?
     enum CodingKeys: String, CodingKey {
         case text, category
         case imageURL = "image_url"
-    }
-}
-
-private struct KudosInsert: Encodable {
-    let postID: UUID
-    let userID: UUID
-    enum CodingKeys: String, CodingKey {
-        case postID = "post_id"
-        case userID = "user_id"
+        case choreSubcategory = "chore_subcategory"
     }
 }
 

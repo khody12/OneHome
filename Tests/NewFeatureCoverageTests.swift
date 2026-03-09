@@ -339,12 +339,16 @@ struct PostDetailTests {
         #expect(vm.errorMessage == nil)
     }
 
-    @Test("PostDetailViewModel kudosBounce starts false")
-    func kudosBounceStartsFalse() {
-        // WHY: The kudos button animation flag must be off at rest.
-        let post = Fake.post()
+    @Test("PostDetailViewModel reactions starts from post.reactions")
+    func reactionsInitializedFromPost() {
+        // WHY: If the post already has reactions (from a join query), they must
+        // be pre-loaded into the VM's reactions array so the UI renders them
+        // immediately without waiting for a network call.
+        let r = Fake.reaction(emoji: "🔥")
+        let post = Fake.post(reactions: [r])
         let vm = makeVM(with: post)
-        #expect(vm.kudosBounce == false)
+        #expect(vm.reactions.count == 1)
+        #expect(vm.reactions[0].emoji == "🔥")
     }
 
     // MARK: - Comment Submission Guard Conditions
@@ -390,50 +394,59 @@ struct PostDetailTests {
         #expect(vm.commentText == "")
     }
 
-    // MARK: - Kudos Toggle Local State
+    // MARK: - Reaction Toggle Local State
 
-    @Test("Kudos toggle flips hasGivenKudos from false to true")
-    func kudosFlipsToTrue() {
-        // WHY: The optimistic kudos toggle must immediately flip the local flag
-        // so the UI button reflects the new state without waiting for the network.
-        var post = Fake.post(kudosCount: 2, hasGivenKudos: false)
-        // Simulate the optimistic update from PostDetailViewModel.toggleKudos
-        post.hasGivenKudos.toggle()
-        post.kudosCount += post.hasGivenKudos ? 1 : -1
-
-        #expect(post.hasGivenKudos == true)
-        #expect(post.kudosCount == 3)
+    @Test("toggleReaction adds emoji when user has not reacted")
+    func reactionFlipsToAdded() async {
+        // WHY: The optimistic reaction toggle must immediately add the reaction
+        // so the UI reflects the new state without waiting for the network.
+        let devPost = Fake.post(homeID: DevPreview.home.id, reactions: [])
+        let vm = makeVM(with: devPost)
+        let userID = UUID()
+        await vm.toggleReaction(emoji: "🐐", userID: userID)
+        #expect(vm.reactions.contains { $0.emoji == "🐐" && $0.userID == userID })
     }
 
-    @Test("Kudos toggle flips hasGivenKudos from true to false")
-    func kudosFlipsToFalse() {
-        // WHY: Un-kudosing must flip the flag back and decrement the count.
-        var post = Fake.post(kudosCount: 5, hasGivenKudos: true)
-        post.hasGivenKudos.toggle()
-        post.kudosCount += post.hasGivenKudos ? 1 : -1
-
-        #expect(post.hasGivenKudos == false)
-        #expect(post.kudosCount == 4)
+    @Test("toggleReaction removes emoji when user has already reacted")
+    func reactionFlipsToRemoved() async {
+        // WHY: Tapping the same emoji again must immediately remove the reaction.
+        let userID = UUID()
+        let postID = UUID()
+        let existing = Reaction(id: UUID(), postID: postID, userID: userID, emoji: "👍", createdAt: Date(), user: nil)
+        let devPost = Fake.post(id: postID, homeID: DevPreview.home.id, reactions: [existing])
+        let vm = makeVM(with: devPost)
+        await vm.toggleReaction(emoji: "👍", userID: userID)
+        #expect(!vm.reactions.contains { $0.userID == userID && $0.emoji == "👍" })
     }
 
-    @Test("Kudos count increments by exactly 1 when giving kudos")
-    func kudosCountIncrements() {
-        // WHY: The increment must be exactly 1, not a different delta.
-        var post = Fake.post(kudosCount: 10, hasGivenKudos: false)
-        let before = post.kudosCount
-        post.hasGivenKudos.toggle()
-        post.kudosCount += post.hasGivenKudos ? 1 : -1
-        #expect(post.kudosCount == before + 1)
+    @Test("reactionSummary count increments by exactly 1 when adding reaction")
+    func reactionSummaryCountIncrements() async {
+        // WHY: The count displayed in the reaction bubble must be accurate.
+        let userID = UUID()
+        let otherID = UUID()
+        let postID = UUID()
+        let r1 = Fake.reaction(postID: postID, userID: otherID, emoji: "🐐")
+        let devPost = Fake.post(id: postID, homeID: DevPreview.home.id, reactions: [r1])
+        let vm = makeVM(with: devPost)
+        let before = vm.reactionSummary(userID: userID).first { $0.emoji == "🐐" }?.count ?? 0
+        await vm.toggleReaction(emoji: "🐐", userID: userID)
+        let after = vm.reactionSummary(userID: userID).first { $0.emoji == "🐐" }?.count ?? 0
+        #expect(after == before + 1)
     }
 
-    @Test("Kudos count decrements by exactly 1 when removing kudos")
-    func kudosCountDecrements() {
-        // WHY: The decrement must be exactly 1.
-        var post = Fake.post(kudosCount: 10, hasGivenKudos: true)
-        let before = post.kudosCount
-        post.hasGivenKudos.toggle()
-        post.kudosCount += post.hasGivenKudos ? 1 : -1
-        #expect(post.kudosCount == before - 1)
+    @Test("reactionSummary count decrements by exactly 1 when removing reaction")
+    func reactionSummaryCountDecrements() async {
+        // WHY: The decrement must be exactly 1, not a different delta.
+        let userID = UUID()
+        let postID = UUID()
+        let r1 = Fake.reaction(postID: postID, userID: UUID(), emoji: "🐐")
+        let r2 = Fake.reaction(postID: postID, userID: userID, emoji: "🐐")
+        let devPost = Fake.post(id: postID, homeID: DevPreview.home.id, reactions: [r1, r2])
+        let vm = makeVM(with: devPost)
+        let before = vm.reactionSummary(userID: userID).first { $0.emoji == "🐐" }?.count ?? 0
+        await vm.toggleReaction(emoji: "🐐", userID: userID)
+        let after = vm.reactionSummary(userID: userID).first { $0.emoji == "🐐" }?.count ?? 0
+        #expect(after == before - 1)
     }
 
     // MARK: - Comment Ordering
@@ -510,9 +523,11 @@ struct PostDetailTests {
     func vmExposesPost() {
         // WHY: The post detail view binds to vm.post for display.
         // If the VM stores a copy with mutations, the ID must still match.
-        let post = Fake.post(kudosCount: 7)
+        let r = Fake.reaction(emoji: "🌟")
+        let post = Fake.post(reactions: [r])
         let vm = makeVM(with: post)
         #expect(vm.post.id == post.id)
-        #expect(vm.post.kudosCount == 7)
+        #expect(vm.reactions.count == 1)
+        #expect(vm.reactions[0].emoji == "🌟")
     }
 }

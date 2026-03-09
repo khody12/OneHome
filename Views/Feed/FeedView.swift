@@ -24,8 +24,35 @@ struct FeedView: View {
                             ForEach(vm.feedItems) { item in
                                 switch item {
                                 case .post(let post):
-                                    PostCardView(post: post) {
-                                        Task { await vm.toggleKudos(on: post, userID: appState.currentUser!.id) }
+                                    if post.category == .request {
+                                        RequestCardView(post: post, home: home) {
+                                            // onComplete: reload the feed after completion
+                                            Task { await vm.loadFeed(for: home) }
+                                        }
+                                    } else {
+                                        PostCardView(
+                                            post: post,
+                                            currentUserID: appState.currentUser?.id ?? UUID(),
+                                            onReact: { emoji in
+                                                Task {
+                                                    await vm.addReaction(
+                                                        emoji: emoji,
+                                                        on: post,
+                                                        userID: appState.currentUser?.id ?? UUID()
+                                                    )
+                                                }
+                                            },
+                                            onClaim: { reminderID in
+                                                guard let me = appState.currentUser else { return }
+                                                Task {
+                                                    await vm.claimReminder(
+                                                        reminderID: reminderID,
+                                                        claimer: me,
+                                                        home: home
+                                                    )
+                                                }
+                                            }
+                                        )
                                     }
                                 case .stickyNote(let note):
                                     StickyNoteCardView(note: note)

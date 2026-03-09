@@ -15,8 +15,8 @@ struct MainTabView: View {
                 MetricsView(home: home, currentUserID: appState.currentUser?.id ?? UUID())
                     .tabItem { Label("Leaderboard", systemImage: "trophy.fill") }
 
-                HomeSelectionView()
-                    .tabItem { Label("Homes", systemImage: "building.2.fill") }
+                YourHomeView(home: home)
+                    .tabItem { Label("Home", systemImage: "house.circle.fill") }
             }
             .tint(.orange)
         } else {

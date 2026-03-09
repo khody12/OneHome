@@ -116,7 +116,7 @@ struct PaymentRequestView: View {
 
                     let eligibleMembers = members.filter { $0.id != requestorID }
                     ForEach(eligibleMembers) { member in
-                        roommateRow(member: member)
+                        roommateRow(member)
                     }
                 }
 
@@ -333,7 +333,7 @@ private struct SplitRowView: View {
                 .overlay(
                     Text(initials)
                         .font(.headline)
-                        .foregroundStyle(isCurrentUser ? .orange : .secondary)
+                        .foregroundStyle(isCurrentUser ? Color.orange : Color.secondary)
                 )
 
             VStack(alignment: .leading, spacing: 2) {

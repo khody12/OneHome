@@ -4,41 +4,165 @@ import Foundation
 
 // MARK: - ReactionsTests
 //
-// Tests for the kudos reaction system and comment section.
+// Tests for the emoji reactions system and comment section.
 // Pure logic tests that do not require a live Supabase connection.
 
 @Suite("Reactions and Comments")
 struct ReactionsTests {
 
-    // MARK: - Kudos Count Tests
+    // MARK: - Reaction Model
 
-    @Test("Kudos toggle increments count from zero")
-    func kudosIncrementFromZero() {
-        var post = Fake.post(kudosCount: 0, hasGivenKudos: false)
-        // Simulate optimistic update (mirrors PostDetailViewModel.toggleKudos logic)
-        post.hasGivenKudos.toggle()
-        post.kudosCount += post.hasGivenKudos ? 1 : -1
-        #expect(post.kudosCount == 1)
-        #expect(post.hasGivenKudos == true)
+    @Test("Reaction initializes with correct properties")
+    func reactionInitializes() {
+        let postID = UUID()
+        let userID = UUID()
+        let r = Fake.reaction(postID: postID, userID: userID, emoji: "🐐")
+        #expect(r.postID == postID)
+        #expect(r.userID == userID)
+        #expect(r.emoji == "🐐")
     }
 
-    @Test("Kudos toggle decrements when already given")
-    func kudosDecrement() {
-        var post = Fake.post(kudosCount: 3, hasGivenKudos: true)
-        // Simulate removing kudos
-        post.hasGivenKudos.toggle()
-        post.kudosCount += post.hasGivenKudos ? 1 : -1
-        #expect(post.kudosCount == 2)
-        #expect(post.hasGivenKudos == false)
+    @Test("presetReactions contains exactly 20 emojis")
+    func presetReactionsCount() {
+        #expect(presetReactions.count == 20)
     }
 
-    @Test("hasGivenKudos flips on toggle")
-    func kudosHasGivenFlips() {
-        var post = Fake.post(hasGivenKudos: false)
-        post.hasGivenKudos.toggle()
-        #expect(post.hasGivenKudos == true)
-        post.hasGivenKudos.toggle()
-        #expect(post.hasGivenKudos == false)
+    @Test("presetReactions starts with GOAT emoji")
+    func presetReactionsFirstIsGoat() {
+        #expect(presetReactions.first == "🐐")
+    }
+
+    // MARK: - reactionSummary
+
+    @Test("reactionSummary groups reactions by emoji")
+    func reactionSummaryGroups() {
+        let userID = UUID()
+        let postID = UUID()
+        let r1 = Fake.reaction(postID: postID, userID: UUID(), emoji: "🐐")
+        let r2 = Fake.reaction(postID: postID, userID: UUID(), emoji: "🐐")
+        let r3 = Fake.reaction(postID: postID, userID: UUID(), emoji: "👍")
+        let post = Fake.post(id: postID, reactions: [r1, r2, r3])
+        let vm = PostDetailViewModel(post: post)
+        let summary = vm.reactionSummary(userID: userID)
+        let goat = summary.first { $0.emoji == "🐐" }
+        let thumbs = summary.first { $0.emoji == "👍" }
+        #expect(goat?.count == 2)
+        #expect(thumbs?.count == 1)
+    }
+
+    @Test("reactionSummary is sorted by count descending")
+    func reactionSummarySortedByCount() {
+        let userID = UUID()
+        let postID = UUID()
+        let r1 = Fake.reaction(postID: postID, userID: UUID(), emoji: "👍")
+        let r2 = Fake.reaction(postID: postID, userID: UUID(), emoji: "🐐")
+        let r3 = Fake.reaction(postID: postID, userID: UUID(), emoji: "🐐")
+        let r4 = Fake.reaction(postID: postID, userID: UUID(), emoji: "🐐")
+        let post = Fake.post(id: postID, reactions: [r1, r2, r3, r4])
+        let vm = PostDetailViewModel(post: post)
+        let summary = vm.reactionSummary(userID: userID)
+        #expect(summary.first?.emoji == "🐐")
+        #expect(summary.first?.count == 3)
+    }
+
+    @Test("reactionSummary marks hasReacted true when user has reacted")
+    func reactionSummaryHasReacted() {
+        let userID = UUID()
+        let postID = UUID()
+        let myReaction = Fake.reaction(postID: postID, userID: userID, emoji: "❤️")
+        let other = Fake.reaction(postID: postID, userID: UUID(), emoji: "❤️")
+        let post = Fake.post(id: postID, reactions: [myReaction, other])
+        let vm = PostDetailViewModel(post: post)
+        let summary = vm.reactionSummary(userID: userID)
+        let heart = summary.first { $0.emoji == "❤️" }
+        #expect(heart?.hasReacted == true)
+    }
+
+    @Test("reactionSummary marks hasReacted false when user has not reacted")
+    func reactionSummaryNotReacted() {
+        let userID = UUID()
+        let postID = UUID()
+        let other = Fake.reaction(postID: postID, userID: UUID(), emoji: "🐐")
+        let post = Fake.post(id: postID, reactions: [other])
+        let vm = PostDetailViewModel(post: post)
+        let summary = vm.reactionSummary(userID: userID)
+        let goat = summary.first { $0.emoji == "🐐" }
+        #expect(goat?.hasReacted == false)
+    }
+
+    @Test("reactionSummary returns empty when no reactions")
+    func reactionSummaryEmpty() {
+        let post = Fake.post(reactions: nil)
+        let vm = PostDetailViewModel(post: post)
+        let summary = vm.reactionSummary(userID: UUID())
+        #expect(summary.isEmpty)
+    }
+
+    // MARK: - toggleReaction (optimistic, dev mode)
+
+    @Test("toggleReaction adds reaction optimistically in dev mode")
+    func toggleReactionAddsOptimistic() async {
+        let devPost = Fake.post(
+            homeID: DevPreview.home.id,
+            reactions: []
+        )
+        let vm = PostDetailViewModel(post: devPost)
+        let userID = UUID()
+        await vm.toggleReaction(emoji: "🐐", userID: userID)
+        #expect(vm.reactions.count == 1)
+        #expect(vm.reactions[0].emoji == "🐐")
+        #expect(vm.reactions[0].userID == userID)
+    }
+
+    @Test("toggleReaction removes existing reaction optimistically in dev mode")
+    func toggleReactionRemovesOptimistic() async {
+        let userID = UUID()
+        let postID = UUID(uuidString: "00000000-0000-0000-0000-000000000099")!
+        let existing = Reaction(
+            id: UUID(),
+            postID: postID,
+            userID: userID,
+            emoji: "🐐",
+            createdAt: Date(),
+            user: nil
+        )
+        let devPost = Fake.post(
+            id: postID,
+            homeID: DevPreview.home.id,
+            reactions: [existing]
+        )
+        let vm = PostDetailViewModel(post: devPost)
+        await vm.toggleReaction(emoji: "🐐", userID: userID)
+        #expect(vm.reactions.isEmpty)
+    }
+
+    @Test("toggleReaction same emoji twice results in zero reactions (add then remove)")
+    func toggleReactionTwiceIsRemove() async {
+        let devPost = Fake.post(
+            homeID: DevPreview.home.id,
+            reactions: []
+        )
+        let vm = PostDetailViewModel(post: devPost)
+        let userID = UUID()
+        await vm.toggleReaction(emoji: "👍", userID: userID)
+        #expect(vm.reactions.count == 1)
+        await vm.toggleReaction(emoji: "👍", userID: userID)
+        #expect(vm.reactions.isEmpty)
+    }
+
+    // MARK: - loadReactions (dev mode short-circuit)
+
+    @Test("loadReactions returns DevPreview reactions in dev mode")
+    func loadReactionsDevMode() async {
+        let devPost = Fake.post(
+            id: DevPreview.chorePostID,
+            homeID: DevPreview.home.id,
+            reactions: nil
+        )
+        let vm = PostDetailViewModel(post: devPost)
+        await vm.loadReactions(postID: DevPreview.chorePostID)
+        // DevPreview.reactions are for chorePostID — should be 3
+        #expect(vm.reactions.count == DevPreview.reactions.count)
     }
 
     // MARK: - PostDetailViewModel Initialisation
@@ -59,6 +183,15 @@ struct ReactionsTests {
         #expect(vm.comments.isEmpty)
     }
 
+    @Test("PostDetailViewModel initializes with existing reactions from post")
+    func detailVMInitializesReactions() {
+        let r = Fake.reaction(emoji: "🔥")
+        let post = Fake.post(reactions: [r])
+        let vm = PostDetailViewModel(post: post)
+        #expect(vm.reactions.count == 1)
+        #expect(vm.reactions[0].emoji == "🔥")
+    }
+
     // MARK: - Comment Submission
 
     @Test("Submitting empty comment text is a no-op")
@@ -70,16 +203,6 @@ struct ReactionsTests {
         #expect(vm.commentText.trimmingCharacters(in: .whitespaces).isEmpty)
     }
 
-    @Test("Optimistic comment is added before service returns")
-    func optimisticCommentAdded() async {
-        // After submit with non-empty text, vm.comments grows immediately
-        // (test with mock service when available)
-        let vm = PostDetailViewModel(post: Fake.post())
-        vm.commentText = "Great work! 🙌"
-        // without mock, verify commentText is cleared after submit attempt
-        // Full mock test is in ViewModelTests
-    }
-
     @Test("Comment text is cleared after submit")
     func commentTextClearedAfterSubmit() async {
         let vm = PostDetailViewModel(post: Fake.post())
@@ -87,14 +210,6 @@ struct ReactionsTests {
         await vm.submitComment(userID: UUID(), currentUser: Fake.user())
         // text is cleared regardless of service result
         #expect(vm.commentText.isEmpty)
-    }
-
-    // MARK: - Kudos Users
-
-    @Test("Kudos users list is initially empty")
-    func kudosUsersStartEmpty() {
-        let vm = PostDetailViewModel(post: Fake.post())
-        #expect(vm.kudosUsers.isEmpty)
     }
 
     // MARK: - Comment Model

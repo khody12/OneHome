@@ -250,36 +250,28 @@ struct PostEdgeCaseTests {
         #expect(json["isDraft"] == nil, "camelCase key must not leak into JSON")
     }
 
-    @Test("kudosCount defaults to 0 in Fake.post()")
-    func kudosCountDefaultsToZero() {
-        // WHY: A new post starts with zero kudos. If the default changes,
-        // feed counts would be wrong before any user interaction.
+    @Test("reactions defaults to nil in Fake.post()")
+    func reactionsDefaultsToNil() {
+        // WHY: A new post starts with no reactions. If the default changes,
+        // reaction counts would be wrong before any user interaction.
         let post = Fake.post()
-        #expect(post.kudosCount == 0)
+        #expect(post.reactions == nil)
     }
 
-    @Test("hasGivenKudos defaults to false at the struct level")
-    func hasGivenKudosDefaultsFalse() {
-        // WHY: hasGivenKudos is LOCAL state — it is not stored in the DB
-        // and not in CodingKeys. Its default must be false so freshly decoded
-        // posts don't appear pre-kudosed to the current user.
-        let post = Fake.post()
-        #expect(post.hasGivenKudos == false)
-    }
-
-    @Test("hasGivenKudos is absent from JSON output (local-state only)")
-    func hasGivenKudosAbsentFromJSON() throws {
-        // WHY: hasGivenKudos is intentionally excluded from CodingKeys.
-        // If it were encoded, Supabase would reject or ignore the extra field —
-        // but it signals a CodingKeys regression worth catching explicitly.
+    @Test("reactions key is absent from JSON output when nil")
+    func reactionsAbsentFromJSONWhenNil() throws {
+        // WHY: nil optional reactions must not emit a key in JSON or it pollutes
+        // the Supabase insert payload.
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
 
-        var post = Fake.post()
-        post.hasGivenKudos = true
+        let post = Fake.post(reactions: nil)
         let data = try encoder.encode(post)
         let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
 
+        // reactions key should be absent (nil optional not encoded by default)
+        #expect(json["kudosCount"] == nil)
+        #expect(json["kudos_count"] == nil)
         #expect(json["hasGivenKudos"] == nil)
         #expect(json["has_given_kudos"] == nil)
     }

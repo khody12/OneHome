@@ -72,7 +72,7 @@ struct DatabaseConsistencyTests {
     @Test("Post coding keys match schema columns")
     func postCodingKeysMatchSchema() throws {
         // Schema: id, home_id, user_id, category, text, image_url,
-        //         is_draft, kudos_count, created_at
+        //         is_draft, created_at
         let post = Fake.post()
         let json = try jsonKeys(from: post)
 
@@ -82,7 +82,6 @@ struct DatabaseConsistencyTests {
         #expect(json["category"] != nil)
         #expect(json["text"] != nil)
         #expect(json["is_draft"] != nil)
-        #expect(json["kudos_count"] != nil)
         #expect(json["created_at"] != nil)
         // Verify NO camelCase leakage
         #expect(json["homeID"] == nil)
@@ -103,7 +102,6 @@ struct DatabaseConsistencyTests {
             text: "Bought olive oil $12.50",
             imageURL: "https://cdn.example.com/img.jpg",
             isDraft: false,
-            kudosCount: 7,
             author: author
         )
         let data = try encoder.encode(original)
@@ -116,7 +114,6 @@ struct DatabaseConsistencyTests {
         #expect(decoded.text == original.text)
         #expect(decoded.imageURL == original.imageURL)
         #expect(decoded.isDraft == original.isDraft)
-        #expect(decoded.kudosCount == original.kudosCount)
     }
 
     @Test("Draft post has is_draft=true in JSON")
@@ -267,11 +264,12 @@ struct DatabaseConsistencyTests {
 
     @Test("PostCategory raw values match schema check constraint")
     func postCategoryValuesMatchSchema() {
-        // Schema: check (category in ('chore', 'purchase', 'general'))
+        // Schema: check (category in ('chore', 'purchase', 'general', 'request'))
         // If these don't match, every post insert will fail the DB check constraint.
         #expect(PostCategory.chore.rawValue == "chore")
         #expect(PostCategory.purchase.rawValue == "purchase")
         #expect(PostCategory.general.rawValue == "general")
+        #expect(PostCategory.request.rawValue == "request")
     }
 
     @Test("PostCategory encodes to correct string in JSON")
@@ -288,7 +286,7 @@ struct DatabaseConsistencyTests {
     func allPostCategoriesCoveredBySchema() {
         // WHY: If someone adds a new case to PostCategory without updating the
         // DB check constraint, every post with that category will fail to save.
-        let schemaValues: Set<String> = ["chore", "purchase", "general"]
+        let schemaValues: Set<String> = ["chore", "purchase", "general", "request"]
         let swiftValues = Set(PostCategory.allCases.map { $0.rawValue })
         #expect(swiftValues == schemaValues)
     }

@@ -128,48 +128,49 @@ struct ScenarioTests {
                 "User who posted 36h ago is NOT slacking (within 72h window)")
     }
 
-    // MARK: - Kudos
+    // MARK: - Reactions
 
-    @Test("Kudos toggle increments count correctly")
-    func kudosToggleIncrements() {
-        // WHY: Kudos count is optimistically mutated in FeedViewModel.
-        // Verify the arithmetic: adding kudos when hasGivenKudos = false.
-        var post = Fake.post(kudosCount: 3, hasGivenKudos: false)
-
-        // Simulate the toggle logic from FeedViewModel.toggleKudos
-        post.hasGivenKudos.toggle()
-        post.kudosCount += post.hasGivenKudos ? 1 : -1
-
-        #expect(post.kudosCount == 4)
-        #expect(post.hasGivenKudos == true)
+    @Test("Adding a new emoji reaction increases reactions count")
+    func reactionToggleAdds() {
+        // WHY: Reaction count is optimistically mutated in FeedViewModel.
+        // Verify adding a new reaction increments the group count.
+        let userID = UUID()
+        let postID = UUID()
+        var post = Fake.post(id: postID, reactions: [])
+        let newReaction = Fake.reaction(postID: postID, userID: userID, emoji: "🐐")
+        post.reactions?.append(newReaction)
+        let vm = PostDetailViewModel(post: post)
+        let summary = vm.reactionSummary(userID: userID)
+        #expect(summary.first { $0.emoji == "🐐" }?.count == 1)
     }
 
-    @Test("Kudos untoggle decrements count")
-    func kudosToggleDecrements() {
-        // WHY: Removing kudos when hasGivenKudos = true. Count must drop by 1.
-        var post = Fake.post(kudosCount: 7, hasGivenKudos: true)
-
-        post.hasGivenKudos.toggle()
-        post.kudosCount += post.hasGivenKudos ? 1 : -1
-
-        #expect(post.kudosCount == 6)
-        #expect(post.hasGivenKudos == false)
+    @Test("Removing a reaction decreases reactions count")
+    func reactionToggleRemoves() {
+        // WHY: Removing a reaction should reduce the group count for that emoji.
+        let userID = UUID()
+        let postID = UUID()
+        let r1 = Fake.reaction(postID: postID, userID: UUID(), emoji: "🐐")
+        let r2 = Fake.reaction(postID: postID, userID: userID, emoji: "🐐")
+        var post = Fake.post(id: postID, reactions: [r1, r2])
+        let vm = PostDetailViewModel(post: post)
+        // Simulate removing the user's own reaction
+        vm.reactions.removeAll { $0.userID == userID && $0.emoji == "🐐" }
+        let summary = vm.reactionSummary(userID: userID)
+        #expect(summary.first { $0.emoji == "🐐" }?.count == 1)
     }
 
-    @Test("Kudos count never goes negative from zero")
-    func kudosCountFloorZero() {
-        // WHY: If a post has 0 kudos and we somehow trigger a decrement
-        // (e.g. state desync), we want to document what happens.
-        var post = Fake.post(kudosCount: 0, hasGivenKudos: true)
-
-        // Removing kudos from a 0-count post (edge case / state desync)
-        post.hasGivenKudos.toggle()
-        post.kudosCount += post.hasGivenKudos ? 1 : -1
-
-        // Documents current behavior: it goes to -1 (no floor guard in VM)
-        // This is an explicit documentation test — if a floor is added, update this.
-        #expect(post.kudosCount == -1)
-        #expect(post.hasGivenKudos == false)
+    @Test("Reactions from multiple users group correctly by emoji")
+    func reactionGrouping() {
+        // WHY: Reactions must be grouped by emoji so the bubble shows combined counts.
+        let postID = UUID()
+        let r1 = Fake.reaction(postID: postID, userID: UUID(), emoji: "🔥")
+        let r2 = Fake.reaction(postID: postID, userID: UUID(), emoji: "🔥")
+        let r3 = Fake.reaction(postID: postID, userID: UUID(), emoji: "👍")
+        let post = Fake.post(id: postID, reactions: [r1, r2, r3])
+        let vm = PostDetailViewModel(post: post)
+        let summary = vm.reactionSummary(userID: UUID())
+        #expect(summary.first { $0.emoji == "🔥" }?.count == 2)
+        #expect(summary.first { $0.emoji == "👍" }?.count == 1)
     }
 
     // MARK: - Drafts
@@ -313,8 +314,7 @@ struct ScenarioTests {
         let original = Fake.post(
             category: .purchase,
             text: "Bought milk $4.50",
-            isDraft: false,
-            kudosCount: 7
+            isDraft: false
         )
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -330,7 +330,6 @@ struct ScenarioTests {
         #expect(decoded.category == original.category)
         #expect(decoded.text == original.text)
         #expect(decoded.isDraft == original.isDraft)
-        #expect(decoded.kudosCount == original.kudosCount)
     }
 
     @Test("Comment model survives JSON round-trip")

@@ -21,6 +21,17 @@ class PostViewModel {
     // Called when camera tab opens — create draft immediately
     func startDraft(homeID: UUID, userID: UUID) async {
         guard draft == nil else { return }
+#if DEBUG
+        if homeID == DevPreview.home.id {
+            draft = Post(
+                id: UUID(), homeID: homeID, userID: userID,
+                category: selectedCategory, text: "", imageURL: nil,
+                isDraft: true, createdAt: Date(),
+                reactions: nil, comments: [], author: DevPreview.user
+            )
+            return
+        }
+#endif
         isLoading = true
         do {
             draft = try await PostService.shared.createDraft(homeID: homeID, userID: userID, category: selectedCategory)
@@ -62,6 +73,12 @@ class PostViewModel {
             errorMessage = "No draft found. Please restart."
             return
         }
+#if DEBUG
+        if homeID == DevPreview.home.id {
+            if !isDraft { isPosted = true; draft = nil }
+            return
+        }
+#endif
 
         isLoading = true
         errorMessage = nil

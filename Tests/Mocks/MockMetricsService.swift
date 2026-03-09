@@ -28,6 +28,12 @@ final class MockMetricsService: MetricsServiceProtocol {
     /// If set, all calls throw this error
     var errorToThrow: Error?
 
+    // MARK: Leaderboard Return Values
+
+    var choreLeaderboardToReturn: [CategoryLeaderboardEntry] = []
+    var overallChoreLeaderboardToReturn: [CategoryLeaderboardEntry] = []
+    var spendLeaderboardToReturn: [CategoryLeaderboardEntry] = []
+
     // MARK: - MetricsServiceProtocol
 
     func fetchMetrics(for homeID: UUID) async throws -> [UserMetrics] {
@@ -46,6 +52,21 @@ final class MockMetricsService: MetricsServiceProtocol {
         if let error = errorToThrow { throw error }
     }
 
+    func fetchChoreLeaderboard(homeID: UUID, subcategory: ChoreSubcategory, since: Date?) async throws -> [CategoryLeaderboardEntry] {
+        if let error = errorToThrow { throw error }
+        return choreLeaderboardToReturn
+    }
+
+    func fetchOverallChoreLeaderboard(homeID: UUID, since: Date?) async throws -> [CategoryLeaderboardEntry] {
+        if let error = errorToThrow { throw error }
+        return overallChoreLeaderboardToReturn
+    }
+
+    func fetchSpendLeaderboard(homeID: UUID, since: Date?) async throws -> [CategoryLeaderboardEntry] {
+        if let error = errorToThrow { throw error }
+        return spendLeaderboardToReturn
+    }
+
     // MARK: Convenience Reset
 
     func reset() {
@@ -57,6 +78,9 @@ final class MockMetricsService: MetricsServiceProtocol {
         lastRecordedCategory = nil
         lastRecordedAmount = nil
         metricsToReturn = []
+        choreLeaderboardToReturn = []
+        overallChoreLeaderboardToReturn = []
+        spendLeaderboardToReturn = []
         errorToThrow = nil
     }
 }

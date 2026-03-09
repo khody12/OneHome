@@ -12,15 +12,18 @@ final class TestableFeedViewModel: FeedViewModel {
     let postService: MockPostService
     let noteService: MockStickyNoteService
     let metricsService: MockMetricsService
+    let reactionService: MockReactionService
 
     init(
         postService: MockPostService,
         noteService: MockStickyNoteService,
-        metricsService: MockMetricsService
+        metricsService: MockMetricsService,
+        reactionService: MockReactionService = MockReactionService()
     ) {
         self.postService = postService
         self.noteService = noteService
         self.metricsService = metricsService
+        self.reactionService = reactionService
     }
 
     // Override loadFeed to use injected mocks instead of singletons
@@ -45,20 +48,37 @@ final class TestableFeedViewModel: FeedViewModel {
         isLoading = false
     }
 
-    // Override toggleKudos to use injected mock
-    override func toggleKudos(on post: Post, userID: UUID) async {
-        // Optimistic update (mirrors production logic exactly)
+    // Override addReaction to use injected mock
+    override func addReaction(emoji: String, on post: Post, userID: UUID) async {
+        // Optimistic update (mirrors production logic)
         if let idx = feedItems.firstIndex(where: {
             if case .post(let p) = $0 { return p.id == post.id }
             return false
         }) {
             if case .post(var p) = feedItems[idx] {
-                p.hasGivenKudos.toggle()
-                p.kudosCount += p.hasGivenKudos ? 1 : -1
+                let alreadyReacted = p.reactions?.contains { $0.userID == userID && $0.emoji == emoji } ?? false
+                if alreadyReacted {
+                    p.reactions?.removeAll { $0.userID == userID && $0.emoji == emoji }
+                } else {
+                    let newReaction = Reaction(
+                        id: UUID(),
+                        postID: post.id,
+                        userID: userID,
+                        emoji: emoji,
+                        createdAt: Date(),
+                        user: nil
+                    )
+                    if p.reactions == nil { p.reactions = [] }
+                    p.reactions?.append(newReaction)
+                }
                 feedItems[idx] = .post(p)
             }
         }
-        try? await postService.toggleKudos(postID: post.id, userID: userID, hasKudos: post.hasGivenKudos)
+        do {
+            _ = try await reactionService.addReaction(postID: post.id, userID: userID, emoji: emoji)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     // Override addStickyNote to use injected mock
@@ -79,12 +99,13 @@ struct FeedViewModelTests {
 
     // MARK: Helpers
 
-    private func makeSUT() -> (vm: TestableFeedViewModel, posts: MockPostService, notes: MockStickyNoteService, metrics: MockMetricsService) {
+    private func makeSUT() -> (vm: TestableFeedViewModel, posts: MockPostService, notes: MockStickyNoteService, metrics: MockMetricsService, reactions: MockReactionService) {
         let posts = MockPostService()
         let notes = MockStickyNoteService()
         let metrics = MockMetricsService()
-        let vm = TestableFeedViewModel(postService: posts, noteService: notes, metricsService: metrics)
-        return (vm, posts, notes, metrics)
+        let reactions = MockReactionService()
+        let vm = TestableFeedViewModel(postService: posts, noteService: notes, metricsService: metrics, reactionService: reactions)
+        return (vm, posts, notes, metrics, reactions)
     }
 
     // MARK: - loadFeed
@@ -93,7 +114,7 @@ struct FeedViewModelTests {
     func loadFeedMergesAndSorts() async {
         // WHY: The feed must interleave posts and sticky notes in one chronological list.
         // A sticky note posted after the latest post should appear above it.
-        let (vm, postSvc, noteSvc, _) = makeSUT()
+        let (vm, postSvc, noteSvc, _, _) = makeSUT()
         let home = Fake.home()
         let now = Date()
 
@@ -131,7 +152,7 @@ struct FeedViewModelTests {
     func loadFeedDetectsSlackers() async {
         // WHY: The slacker roast feature depends on loadFeed computing slackers
         // from the metrics it fetches. Verify the filter runs after load.
-        let (vm, _, _, metricsSvc) = makeSUT()
+        let (vm, _, _, metricsSvc, _) = makeSUT()
         let home = Fake.home()
         let now = Date()
 
@@ -152,7 +173,7 @@ struct FeedViewModelTests {
     @Test("loadFeed with empty feed loads without crash")
     func loadFeedEmptyIsOK() async {
         // WHY: An empty home (no posts, no notes) must not crash or set an error.
-        let (vm, _, _, _) = makeSUT()
+        let (vm, _, _, _, _) = makeSUT()
         let home = Fake.home()
 
         await vm.loadFeed(for: home)
@@ -167,7 +188,7 @@ struct FeedViewModelTests {
     func loadFeedSetsErrorOnFailure() async {
         // WHY: A network failure should surface as a user-visible error message,
         // not a silent empty state that looks like success.
-        let (vm, postSvc, _, _) = makeSUT()
+        let (vm, postSvc, _, _, _) = makeSUT()
         postSvc.errorToThrow = AppError.networkError("timeout")
         let home = Fake.home()
 
@@ -182,7 +203,7 @@ struct FeedViewModelTests {
     func loadFeedSetsErrorWhenMetricsFails() async {
         // WHY: All three fetches run in parallel; if any throws, the error
         // must be captured and exposed — not swallowed.
-        let (vm, _, _, metricsSvc) = makeSUT()
+        let (vm, _, _, metricsSvc, _) = makeSUT()
         metricsSvc.errorToThrow = AppError.networkError("metrics unavailable")
         let home = Fake.home()
 
@@ -191,93 +212,43 @@ struct FeedViewModelTests {
         #expect(vm.errorMessage != nil)
     }
 
-    // MARK: - toggleKudos
+    // MARK: - addReaction
 
-    @Test("toggleKudos optimistically increments kudosCount and sets hasGivenKudos")
-    func toggleKudosOptimisticIncrement() async {
-        // WHY: The UI should update instantly. The user shouldn't wait for
-        // a round-trip before seeing their kudos register.
-        let (vm, postSvc, _, _) = makeSUT()
+    @Test("addReaction optimistically adds emoji reaction to post in feedItems")
+    func addReactionOptimisticAdd() async {
+        // WHY: The UI should update instantly without waiting for a round-trip.
+        let (vm, postSvc, _, _, _) = makeSUT()
         let home = Fake.home()
-        let post = Fake.post(kudosCount: 2, hasGivenKudos: false)
+        let post = Fake.post(reactions: [])
         postSvc.feedToReturn = [post]
 
         await vm.loadFeed(for: home)
         let userID = UUID()
-        await vm.toggleKudos(on: post, userID: userID)
-
-        // Find the post in feedItems and verify the optimistic update
-        guard case .post(let updated) = vm.feedItems.first(where: {
-            if case .post(let p) = $0 { return p.id == post.id }
-            return false
-        }) else {
-            Issue.record("Post not found in feedItems after toggle")
-            return
-        }
-        #expect(updated.kudosCount == 3)
-        #expect(updated.hasGivenKudos == true)
-    }
-
-    @Test("toggleKudos optimistically decrements kudosCount when removing kudos")
-    func toggleKudosOptimisticDecrement() async {
-        // WHY: Un-kudosing should also be instant. Count drops by 1 immediately.
-        let (vm, postSvc, _, _) = makeSUT()
-        let home = Fake.home()
-        let post = Fake.post(kudosCount: 5, hasGivenKudos: true)
-        postSvc.feedToReturn = [post]
-
-        await vm.loadFeed(for: home)
-        await vm.toggleKudos(on: post, userID: UUID())
+        await vm.addReaction(emoji: "🐐", on: post, userID: userID)
 
         guard case .post(let updated) = vm.feedItems.first(where: {
             if case .post(let p) = $0 { return p.id == post.id }
             return false
         }) else {
-            Issue.record("Post not found in feedItems after toggle")
+            Issue.record("Post not found in feedItems after addReaction")
             return
         }
-        #expect(updated.kudosCount == 4)
-        #expect(updated.hasGivenKudos == false)
+        #expect(updated.reactions?.contains { $0.emoji == "🐐" && $0.userID == userID } == true)
     }
 
-    @Test("toggleKudos calls the service with correct postID and userID")
-    func toggleKudosCallsService() async {
-        // WHY: The optimistic UI update is separate from the network call.
-        // Both must happen — verify the service was called with the right args.
-        let (vm, postSvc, _, _) = makeSUT()
+    @Test("addReaction optimistically removes existing reaction when user already reacted")
+    func addReactionOptimisticRemove() async {
+        // WHY: Tapping the same emoji twice should toggle it off instantly.
+        let (vm, postSvc, _, _, _) = makeSUT()
         let home = Fake.home()
-        let post = Fake.post(kudosCount: 0, hasGivenKudos: false)
-        postSvc.feedToReturn = [post]
         let userID = UUID()
-
-        await vm.loadFeed(for: home)
-        await vm.toggleKudos(on: post, userID: userID)
-
-        #expect(postSvc.toggleKudosCallCount == 1)
-        #expect(postSvc.lastToggledPostID == post.id)
-        #expect(postSvc.lastToggledUserID == userID)
-    }
-
-    @Test("toggleKudos reverts optimistic update on service error")
-    func toggleKudosRevertsOnError() async {
-        // WHY: The production FeedViewModel uses `try?` which silently swallows
-        // the error. That means the UI keeps the optimistic state. This test
-        // documents that current behavior — update stays even on failure.
-        // (A future improvement could revert on error; this test captures the contract.)
-        let (vm, postSvc, _, _) = makeSUT()
-        let home = Fake.home()
-        let post = Fake.post(kudosCount: 1, hasGivenKudos: false)
+        let existingReaction = Fake.reaction(postID: UUID(), userID: userID, emoji: "🐐")
+        let post = Fake.post(reactions: [existingReaction])
         postSvc.feedToReturn = [post]
-        postSvc.errorToThrow = AppError.networkError("kudos failed")
 
         await vm.loadFeed(for: home)
-        // Clear error so only toggleKudos fails
-        postSvc.errorToThrow = AppError.networkError("kudos failed")
-        await vm.toggleKudos(on: post, userID: UUID())
+        await vm.addReaction(emoji: "🐐", on: post, userID: userID)
 
-        // The optimistic update happens before the service call, so the
-        // count IS incremented even though the service threw. This documents
-        // the current behavior. The error is swallowed via try?.
         guard case .post(let updated) = vm.feedItems.first(where: {
             if case .post(let p) = $0 { return p.id == post.id }
             return false
@@ -285,9 +256,41 @@ struct FeedViewModelTests {
             Issue.record("Post not found in feedItems")
             return
         }
-        // Optimistic update sticks (try? swallows the error)
-        #expect(updated.kudosCount == 2)
-        #expect(updated.hasGivenKudos == true)
+        #expect(updated.reactions?.contains { $0.userID == userID && $0.emoji == "🐐" } != true)
+    }
+
+    @Test("addReaction calls the reaction service with correct parameters")
+    func addReactionCallsService() async {
+        // WHY: The optimistic UI update is separate from the network call.
+        // Both must happen — verify the service was called with the right args.
+        let (vm, postSvc, _, _, reactionSvc) = makeSUT()
+        let home = Fake.home()
+        let post = Fake.post(reactions: [])
+        postSvc.feedToReturn = [post]
+        let userID = UUID()
+
+        await vm.loadFeed(for: home)
+        await vm.addReaction(emoji: "🔥", on: post, userID: userID)
+
+        #expect(reactionSvc.addReactionCallCount == 1)
+        #expect(reactionSvc.lastAddedPostID == post.id)
+        #expect(reactionSvc.lastAddedUserID == userID)
+        #expect(reactionSvc.lastAddedEmoji == "🔥")
+    }
+
+    @Test("addReaction sets errorMessage when service throws")
+    func addReactionSetsErrorOnFailure() async {
+        // WHY: If adding a reaction fails (e.g. offline), the error must be surfaced.
+        let (vm, postSvc, _, _, reactionSvc) = makeSUT()
+        let home = Fake.home()
+        let post = Fake.post(reactions: [])
+        postSvc.feedToReturn = [post]
+        reactionSvc.errorToThrow = AppError.networkError("reaction failed")
+
+        await vm.loadFeed(for: home)
+        await vm.addReaction(emoji: "😂", on: post, userID: UUID())
+
+        #expect(vm.errorMessage != nil)
     }
 
     // MARK: - addStickyNote
@@ -296,7 +299,7 @@ struct FeedViewModelTests {
     func addStickyNotePrepends() async {
         // WHY: Sticky notes should appear at the top of the feed the moment
         // they're posted — no page refresh required.
-        let (vm, postSvc, noteSvc, _) = makeSUT()
+        let (vm, postSvc, noteSvc, _, _) = makeSUT()
         let home = Fake.home()
         let existingPost = Fake.post(createdAt: Date().addingTimeInterval(-3600))
         postSvc.feedToReturn = [existingPost]
@@ -321,7 +324,7 @@ struct FeedViewModelTests {
     func addStickyNoteErrorSetsMessage() async {
         // WHY: If posting a sticky note fails (e.g. offline), the user
         // needs to see an error rather than a silent no-op.
-        let (vm, _, noteSvc, _) = makeSUT()
+        let (vm, _, noteSvc, _, _) = makeSUT()
         noteSvc.errorToThrow = AppError.networkError("connection refused")
         let home = Fake.home()
 
